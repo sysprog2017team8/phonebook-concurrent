@@ -2,6 +2,7 @@ CC ?= gcc
 CFLAGS_common ?= -Wall -std=gnu99
 CFLAGS_orig = -O0
 CFLAGS_opt  = -O0 -pthread -g -pg
+CFLAGS_lockfree  = -O0 -pthread -g -pg
 
 ifdef CHECK_LEAK
 CFLAGS_common += -fsanitize=address -fno-omit-frame-pointer
@@ -9,13 +10,14 @@ endif
 
 ifdef THREAD
 CFLAGS_opt  += -D THREAD_NUM=${THREAD}
+CFLAGS_lockfree  += -D THREAD_NUM=${THREAD}
 endif
 
 ifeq ($(strip $(DEBUG)),1)
 CFLAGS_opt += -DDEBUG -g
 endif
 
-EXEC = phonebook_orig phonebook_opt
+EXEC = phonebook_orig phonebook_opt phonebook_lockfree
 GIT_HOOKS := .git/hooks/applied
 .PHONY: all
 all: $(GIT_HOOKS) $(EXEC)
@@ -39,6 +41,11 @@ phonebook_opt: $(SRCS_common) phonebook_opt.c phonebook_opt.h text_align.c
 		-DIMPL="\"$@.h\"" -o $@ \
 		$(SRCS_common) $@.c text_align.c
 
+phonebook_lockfree: $(SRCS_common) phonebook_lockfree.c phonebook_lockfree.h text_align.c
+	$(CC) $(CFLAGS_common) $(CFLAGS_lockfree) \
+		-DIMPL="\"$@.h\"" -o $@ \
+		$(SRCS_common) $@.c text_align.c
+
 run: $(EXEC)
 	echo 3 | sudo tee /proc/sys/vm/drop_caches
 	watch -d -t "./phonebook_orig && echo 3 | sudo tee /proc/sys/vm/drop_caches"
@@ -50,6 +57,9 @@ cache-test: $(EXEC)
 	perf stat --repeat 100 \
 		-e cache-misses,cache-references,instructions,cycles \
 		./phonebook_opt
+	perf stat --repeat 100 \
+		-e cache-misses,cache-references,instructions,cycles \
+		./phonebook_lockfree
 
 output.txt: cache-test calculate
 	./calculate

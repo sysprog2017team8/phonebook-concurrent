@@ -11,12 +11,20 @@
 
 #include IMPL
 
-#ifndef OPT
-#define OUTPUT_FILE "orig.txt"
-
-#else
+#ifdef OPT
 #define OUTPUT_FILE "opt.txt"
 
+#else
+
+#ifdef LOCKFREE
+
+#define OUTPUT_FILE "lockfree.txt"
+
+#else
+
+#define OUTPUT_FILE "opt.txt"
+
+#endif
 #endif
 
 #define DICT_FILE "./dictionary/words.txt"
