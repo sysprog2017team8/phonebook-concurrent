@@ -15,7 +15,7 @@ ifeq ($(strip $(DEBUG)),1)
 CFLAGS_opt += -DDEBUG -g
 endif
 
-EXEC = phonebook_orig phonebook_opt
+EXEC = phonebook_orig phonebook_opt phonebook_lock
 GIT_HOOKS := .git/hooks/applied
 .PHONY: all
 all: $(GIT_HOOKS) $(EXEC)
@@ -39,6 +39,11 @@ phonebook_opt: $(SRCS_common) phonebook_opt.c phonebook_opt.h text_align.c
 		-DIMPL="\"$@.h\"" -o $@ \
 		$(SRCS_common) $@.c text_align.c
 
+phonebook_lock: $(SRCS_common) phonebook_lock.c phonebook_lock.h text_align.c
+	$(CC) $(CFLAGS_common) $(CFALGS_lock) \
+		-DIMPL="\"$@.h\"" -o $@ \
+		$(SRCS_common) $@.c text_align.c -lpthread
+
 run: $(EXEC)
 	echo 3 | sudo tee /proc/sys/vm/drop_caches
 	watch -d -t "./phonebook_orig && echo 3 | sudo tee /proc/sys/vm/drop_caches"
@@ -50,6 +55,9 @@ cache-test: $(EXEC)
 	perf stat --repeat 100 \
 		-e cache-misses,cache-references,instructions,cycles \
 		./phonebook_opt
+	perf stat --repeat 100 \
+		-e cache-misses,cache-references,instructions,cycles \
+		./phonebook_lock
 
 output.txt: cache-test calculate
 	./calculate
