@@ -86,6 +86,8 @@ static void append(void *arg)
         LOCK(entryHead->lock);
 
         entry *newElem = j;
+        newElem->lock = malloc(sizeof(ptlock_t));
+        INIT_LOCK(newElem->lock);
         newElem->lastName = i;
         newElem->pNext = NULL;
 
@@ -177,6 +179,54 @@ static void phonebook_free()
         free(thread_args[i]);
 
     munmap(map, file_size);
+}
+
+void removeEach(char *name)
+{
+    entry *tempEntry = entryHead;
+    LOCK(tempEntry->lock);
+
+    if(tempEntry->pNext == NULL) {
+        UNLOCK(tempEntry->lock);
+        return;
+    }
+
+    entry *elem = tempEntry->pNext;
+    LOCK(elem->lock);
+
+    while(elem->pNext != NULL) {
+        if(strncasecmp(elem->lastName, name,strlen(name)) == 0) {
+            tempEntry->pNext = elem->pNext;
+
+
+            UNLOCK(elem->lock);
+            DESTROY_LOCK(elem->lock);
+            //free(elem->lock);
+            //free(elem);
+
+            UNLOCK(tempEntry->lock);
+            return;
+        } else {
+            UNLOCK(tempEntry->lock);
+            tempEntry = elem;
+            elem = elem->pNext;
+            LOCK(elem->lock);
+        }
+    }
+
+    if(strncasecmp(elem->lastName, name,strlen(name))==0) {
+        tempEntry->pNext = elem->pNext;
+
+        printf("cayon3\n");
+        UNLOCK(elem->lock);
+        //DESTROY_LOCK(elem->lock);
+        //free(elem->lock);
+        //free(elem);
+        UNLOCK(tempEntry->lock);
+    } else {
+        UNLOCK(elem->lock);
+        UNLOCK(tempEntry->lock);
+    }
 }
 
 void show_size()
