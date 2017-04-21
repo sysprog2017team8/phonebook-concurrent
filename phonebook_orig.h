@@ -26,6 +26,7 @@ extern struct __PHONEBOOK_API {
     entry *(*removeByFile)(char *fileName);
     entry *(*remove)(char *lastName);
     entry *(*findName)(char *lastName);
+    void (*size)();
     void (*free)();
 } Phonebook;
 

@@ -14,17 +14,12 @@
 #ifdef OPT
 #define OUTPUT_FILE "opt.txt"
 
-#else
-
-#ifdef LOCKFREE
-
+#elif LOCKFREE
 #define OUTPUT_FILE "lockfree.txt"
 
 #else
+#define OUTPUT_FILE "orig.txt"
 
-#define OUTPUT_FILE "opt.txt"
-
-#endif
 #endif
 
 #define DICT_FILE "./dictionary/words.txt"
@@ -92,6 +87,8 @@ int main(int argc, char *argv[])
     /* Stop timing */
     fprintf(output,"%lf ",Stopwatch.end("Phonebook.appendByFile()"));
 
+    Phonebook.size();
+
     /* Find the given entry */
     /* the givn last name to find */
     char input[MAX_LAST_NAME_SIZE] = "zyxel";
@@ -99,6 +96,20 @@ int main(int argc, char *argv[])
     assert(Phonebook.findName(input) &&
            "Did you implement findName() in " IMPL "?");
     assert(0 == strcmp(Phonebook.findName(input)->lastName, "zyxel"));
+
+    /* Start timing */
+    Stopwatch.start();
+
+    Phonebook.remove(input);
+
+    /* Stop timing */
+    fprintf(output,"%lf ",Stopwatch.end("Phonebook.remove()"));
+
+    Phonebook.size();
+
+//    assert(Phonebook.findName(input) &&
+//           "Did you implement findName() in " IMPL "?");
+//    assert(0 == strcmp(Phonebook.findName(input)->lastName, "zyxel"));
 
 #if defined(__GNUC__)
     __builtin___clear_cache((char *) pHead, (char *) pHead + sizeof(entry));

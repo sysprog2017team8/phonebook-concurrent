@@ -49,6 +49,8 @@ long get_marked_ref(long i)
     return i | 0x1L;
 }
 
+int xx = 0;
+
 static entry *search(char *str, entry **left_entry)
 {
     int i;
@@ -59,16 +61,31 @@ static entry *search(char *str, entry **left_entry)
     while(1) {
         h = j = tmpHead;
         j_next = j->pNext;
-        while( is_marked_ref(j_next) || strncasecmp(str,j_next->lastName,len)!=0 ) {
+        while(1) {
+            while( is_marked_ref(j_next) || strncasecmp(str,j_next->lastName,len)!=0 ) {
+                if(!is_marked_ref(j_next)) {
+                    __sync_val_compare_and_swap(&tmpHead,h,j);
+                    (*left_entry) = j;
+                    left_next = j_next;
+                }
+
+                j = get_unmarked_ref(j_next);
+                if(j_next == entrytail)
+                    break;
+                j_next = j->pNext;
+            }
+
+            if(j_next == entrytail) break;
+
+            if( !is_marked_ref(j_next) && strlen(j_next->lastName) == len)
+                break;
+
             if(!is_marked_ref(j_next)) {
                 __sync_val_compare_and_swap(&tmpHead,h,j);
                 (*left_entry) = j;
                 left_next = j_next;
             }
-
             j = get_unmarked_ref(j_next);
-            if(j_next == entrytail)
-                break;
             j_next = j_next->pNext;
         }
 
@@ -88,6 +105,12 @@ static entry *search(char *str, entry **left_entry)
 
 static entry *findName(char lastname[], entry *pHead)
 {
+    tmpHead = entryHead;
+    entry *left, *right;
+    left = right = NULL;
+    xx = 2;
+    right = search(lastname, &left);
+    return right->pNext;
     size_t len = strlen(lastname);
     pHead = entryHead;
     while (pHead) {
@@ -142,6 +165,7 @@ static void append(void *arg)
             j += t_arg->numOfThread, count++) {
 
         left = right = NULL;
+        if(i[strlen(i)-1]=='\n') i[strlen(i)-1] = '\0';
         j->lastName = i;
         j->pNext = NULL;
         len = strlen(i);
@@ -174,6 +198,18 @@ static void show_entry(entry *pHead)
         printf("%s", pHead->lastName);
         pHead = pHead->pNext;
     }
+}
+
+static void phonebook_size()
+{
+    long long cs = 0;
+    tmpHead = entryHead;
+    while(tmpHead) {
+        ++cs;
+        if((long long)(tmpHead->pNext) %2) --cs;
+        tmpHead = ((entry *)get_unmarked_ref(tmpHead))->pNext;
+    }
+    printf("Entries of link list: %lld\n",cs-2);
 }
 
 static void phonebook_create()
@@ -216,12 +252,6 @@ static entry *phonebook_appendByFile(char *fileName)
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_join(threads[i], NULL);
 
-    long long cs=0;
-
-    for( entry * j = entryHead; j!=entrytail; j=j->pNext)
-        ++cs;
-    printf("Entries of link list: %lld\n",cs-1);
-
     close(fd);
     pthread_setconcurrency(0);
     /* Return head of linked list */
@@ -238,7 +268,7 @@ static void phonebook_free()
     entry *e = entryHead;
     while (e) {
         free(e->dtl);
-        e = e->pNext;
+        e = get_unmarked_ref(e->pNext);
     }
 
     free(entry_pool);
@@ -250,6 +280,22 @@ static void phonebook_free()
 
 static int phonebook_remove(char *lastName)
 {
+    entry *left, *right, *right_succ;
+    left = right = NULL;
+    int len = strlen(lastName);
+    while(1) {
+        tmpHead = entryHead;
+        right = search(lastName, &left);
+        if(right == NULL || strncasecmp(right->lastName,lastName,len) == 0) {
+            return 0;
+        }
+        right_succ = right->pNext;
+        if(!is_marked_ref(right_succ)) {
+            if(__sync_val_compare_and_swap(&(right->pNext), right_succ, get_marked_ref(right_succ)) == right_succ) {
+                return 1;
+            }
+        }
+    }
 }
 
 /* API */
@@ -259,6 +305,7 @@ struct __PHONEBOOK_API Phonebook = {
     .findName = phonebook_findName,
     .remove = phonebook_remove,
     .free = phonebook_free,
+    .size = phonebook_size,
 };
 
 static double diff_in_second(struct timespec t1, struct timespec t2)

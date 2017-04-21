@@ -116,10 +116,8 @@ static entry *phonebook_appendByFile(char *fileName)
     /* Allocate the resource at first */
     map = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     assert(map && "mmap error");
-
     entry_pool = (entry *) malloc(sizeof(entry) * file_size / MAX_LAST_NAME_SIZE);
     assert(entry_pool && "entry_pool error");
-
 
     /* Prepare for mutli-threading */
     pthread_setconcurrency(THREAD_NUM + 1);
@@ -177,11 +175,16 @@ static void phonebook_free()
     munmap(map, file_size);
 }
 
+static int phonebook_remove(char *lastName)
+{
+}
+
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
     .findName = phonebook_findName,
+    .remove = phonebook_remove,
     .free = phonebook_free,
 };
 
