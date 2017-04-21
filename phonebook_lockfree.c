@@ -135,14 +135,15 @@ static void append(void *arg)
     int count = 0, len;
     entry *left, *right;
 
+    entry *j = t_arg->lEntryPool_begin;
+
     for (char *i = t_arg->data_begin; i < t_arg->data_end;
             i += MAX_LAST_NAME_SIZE * t_arg->numOfThread,
-            count++) {
+            j += t_arg->numOfThread, count++) {
 
         left = right = NULL;
-        entry *new = malloc(sizeof(entry));
-        new->lastName = i;
-        new->pNext = NULL;
+        j->lastName = i;
+        j->pNext = NULL;
         len = strlen(i);
 
         /* Append the new at the end of the local linked list */
@@ -150,8 +151,8 @@ static void append(void *arg)
             right = search(i, &left);
             if(right != NULL && strncasecmp(right->lastName,i,len) == 0)
                 break;
-            new->pNext = right;
-            if(__sync_val_compare_and_swap(&(left->pNext), right, new) == right)
+            j->pNext = right;
+            if(__sync_val_compare_and_swap(&(left->pNext), right, j) == right)
                 break;
         }
 
