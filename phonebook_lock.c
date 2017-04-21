@@ -21,8 +21,6 @@
 #include "text_align.h"
 #include "lock_if.h"
 
-
-
 #define ALIGN_FILE "align.txt"
 
 #ifndef THREAD_NUM
@@ -132,6 +130,7 @@ static entry *phonebook_appendByFile(char *fileName)
     assert(entry_pool && "entry_pool error");
 
     entryHead = malloc(sizeof(entry));
+
     entryHead->lock = malloc(sizeof(ptlock_t));
     INIT_LOCK(entryHead->lock);
     entryHead->lastName = "TOTALLYNOTPOSSIBLENAME";
@@ -150,23 +149,6 @@ static entry *phonebook_appendByFile(char *fileName)
 
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_join(threads[i], NULL);
-
-
-    /* Connect the linked list of each thread */
-    /*entryHead = thread_args[0]->lEntry_head->pNext;
-    DEBUG_LOG("Connect 0 head string %s %p\n", entryHead->lastName, thread_args[0]->data_begin);
-    entry *e = thread_args[0]->lEntry_tail;
-    DEBUG_LOG("Connect 0 tail string %s %p\n", e->lastName, thread_args[0]->data_begin);
-    DEBUG_LOG("round 0\n");
-
-    for (int i = 1; i < THREAD_NUM; i++) {
-        e->pNext = thread_args[i]->lEntry_head->pNext;
-        DEBUG_LOG("Connect %d head string %s %p\n", i,e->pNext->lastName, thread_args[i]->data_begin);
-
-        e = thread_args[i]->lEntry_tail;
-        DEBUG_LOG("Connect %d tail string %s %p\n", i, e->lastName, thread_args[i]->data_begin);
-        DEBUG_LOG("round %d\n", i);
-    }*/
 
     close(fd);
     pthread_setconcurrency(0);

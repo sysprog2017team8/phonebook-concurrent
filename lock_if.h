@@ -3,7 +3,6 @@
 
 #include <inttypes.h>
 
-
 typedef uint32_t
 ptlock_t; /* change the type accorind to the lock you want to use */
 #define INIT_LOCK(lock) lock_init(lock)
@@ -26,13 +25,7 @@ void lock_destroy(volatile ptlock_t *l)
 static inline
 uint32_t lock_lock(volatile ptlock_t *l)
 {
-    // uint32_t val = (uint32_t) 0;
-    // while(val == (uint32_t) 0){
-    // 	while ((*l) == (uint32_t) 0);
-    // 	SWAP_U32(l, val);
-    // }
-    while (__sync_val_compare_and_swap(l, (uint32_t)0, (uint32_t)1) == 1)
-        ;
+    while (__sync_val_compare_and_swap(l, (uint32_t)0, (uint32_t)1) == 1);
     return 0;
 }
 
@@ -42,7 +35,5 @@ uint32_t lock_unlock(volatile ptlock_t *l)
     *l = (uint32_t)0;
     return 0;
 }
-
-
 
 #endif /* _LOCK_IF_H_ */
