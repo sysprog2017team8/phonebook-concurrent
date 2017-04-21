@@ -44,6 +44,8 @@ run: $(EXEC)
 	watch -d -t "./phonebook_orig && echo 3 | sudo tee /proc/sys/vm/drop_caches"
 
 cache-test: $(EXEC)
+	rm -f orig.txt
+	rm -f opt.txt
 	perf stat --repeat 100 \
 		-e cache-misses,cache-references,instructions,cycles \
 		./phonebook_orig
@@ -52,13 +54,14 @@ cache-test: $(EXEC)
 		./phonebook_opt
 
 output.txt: cache-test calculate
-	./calculate
+	./calculate "create() appendByFile() findName() free()" orig.txt opt.txt $@
 
 plot: output.txt
 	gnuplot scripts/runtime.gp
 
 calculate: calculate.c
 	$(CC) $(CFLAGS_common) $^ -o $@
+
 
 .PHONY: clean
 clean:
