@@ -83,11 +83,26 @@ static void phonebook_free()
     }
 }
 
+static void phonebook_removeByFile(char *fileName)
+{
+}
+
+static void phonebook_size()
+{
+}
+
+static void phonebook_remove()
+{
+}
+
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
+    .removeByFile = phonebook_removeByFile,
     .append = phonebook_append,
+    .remove = phonebook_remove,
     .findName = phonebook_findName,
     .free = phonebook_free,
+    .size = phonebook_size,
 };

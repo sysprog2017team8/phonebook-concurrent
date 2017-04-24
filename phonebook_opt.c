@@ -179,13 +179,23 @@ static int phonebook_remove(char *lastName)
 {
 }
 
+static void phonebook_size()
+{
+}
+
+static void phonebook_removeByFile(char *fileName)
+{
+}
+
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
+    .removeByFile = phonebook_removeByFile,
     .findName = phonebook_findName,
     .remove = phonebook_remove,
     .free = phonebook_free,
+    .size = phonebook_size,
 };
 
 static double diff_in_second(struct timespec t1, struct timespec t2)

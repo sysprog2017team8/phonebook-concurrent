@@ -100,10 +100,11 @@ int main(int argc, char *argv[])
     /* Start timing */
     Stopwatch.start();
 
-    Phonebook.remove(input);
+    Phonebook.removeByFile(DICT_FILE);
+//	Phonebook.remove("aaaa");
 
     /* Stop timing */
-    fprintf(output,"%lf ",Stopwatch.end("Phonebook.remove()"));
+    fprintf(output,"%lf ",Stopwatch.end("Phonebook.removeByFile()"));
 
     Phonebook.size();
 
