@@ -77,6 +77,9 @@ int main(int argc,char *argv[])
     /* write to output file */
 
     for (int i=0; i<event_count; i++) {
+        if (strlen(event[i])==0)
+            continue;
+
         fprintf(output,"%s",event[i]);
         for (int j=0; j<sample_count; j++) {
             fprintf(output," %lf",average[i][j]);
