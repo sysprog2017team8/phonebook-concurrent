@@ -269,13 +269,14 @@ static int phonebook_removeByFile(char *fileName)
     data_number = file_size / MAX_LAST_NAME_SIZE;
 
     pthread_setconcurrency(THREAD_NUM + 10);
-    for(int i = 0; i < THREAD_NUM ; ++i)
+
+    for(int i = 0; i < THREAD_NUM; ++i)
         thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + file_size, i, THREAD_NUM, NULL);
 
-    for(int i = 0; i< THREAD_NUM; ++i)
+    for(int i = 0; i < THREAD_NUM; ++i)
         pthread_create(&threads[i], NULL, (void *)&phonebook_remove, (void *)thread_args[i]);
 
-    for(int i = 0; i< THREAD_NUM; ++i)
+    for(int i = 0; i < THREAD_NUM; ++i)
         pthread_join(threads[i], NULL);
 
     close(fd);
