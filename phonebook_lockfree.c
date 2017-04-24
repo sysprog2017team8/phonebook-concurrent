@@ -24,6 +24,8 @@
 #define THREAD_NUM 4
 #endif
 
+#define REMOVE_NUM 100
+
 static entry *entryHead,*entry_pool,*entrytail,*tmpHead;
 static pthread_t threads[THREAD_NUM];
 static thread_arg *thread_args[THREAD_NUM];
@@ -126,16 +128,8 @@ static thread_arg *createThread_arg(char *data_begin, char *data_end,
     return new_arg;
 }
 
-/**
- * Generate a local linked list in thread.
- */
 static void append(void *arg)
 {
-    struct timespec start, end;
-    double cpu_time;
-
-    clock_gettime(CLOCK_REALTIME, &start);
-
     thread_arg *t_arg = (thread_arg *) arg;
 
     int count = 0, len;
@@ -153,8 +147,6 @@ static void append(void *arg)
         j->pNext = NULL;
         len = strlen(i);
 
-
-        /* Append the new at the end of the local linked list */
         while(1) {
             right = search(i, &left, tmpHead);
             if(strncasecmp(right->lastName,i,len) == 0 && strlen(right->lastName) == len)
@@ -168,12 +160,39 @@ static void append(void *arg)
                   t_arg->threadID, new -> lastName);
     }
 
-    clock_gettime(CLOCK_REALTIME, &end);
-    cpu_time = diff_in_second(start, end);
+    pthread_exit(NULL);
+}
 
-    DEBUG_LOG("thread take %lf sec, count %d\n", cpu_time, count);
+static void append_on_head(void *arg)
+{
+    thread_arg *t_arg = (thread_arg *) arg;
+
+    int count = 0, len;
+
+    entry *j = t_arg->lEntryPool_begin;
+    entry *Hnext;
+    for (char *i = t_arg->data_begin; i < t_arg->data_end;
+            i += MAX_LAST_NAME_SIZE * t_arg->numOfThread,
+            j += t_arg->numOfThread, count++) {
+
+        if(i[strlen(i)-1]=='\n') i[strlen(i)-1] = '\0';
+        j->lastName = i;
+        j->pNext = NULL;
+        len = strlen(i);
+
+        while(1) {
+            Hnext = entryHead -> pNext;
+            j->pNext = Hnext;
+            if(__sync_val_compare_and_swap(&(entryHead->pNext), Hnext, j) == Hnext)
+                break;
+        }
+
+        DEBUG_LOG("thread %d t_argend string = %s\n",
+                  t_arg->threadID, new -> lastName);
+    }
 
     pthread_exit(NULL);
+
 }
 
 static void show_entry(entry *pHead)
@@ -204,9 +223,6 @@ static void phonebook_create()
 
 static entry *phonebook_appendByFile(char *fileName)
 {
-    /*text_align(fileName, ALIGN_FILE, MAX_LAST_NAME_SIZE);
-    int fd = open(ALIGN_FILE, O_RDONLY | O_NONBLOCK);
-    file_size = fsize(ALIGN_FILE);*/
     int fd = open(fileName, O_RDONLY | O_NONBLOCK);
     file_size = fsize(fileName);
 
@@ -234,7 +250,7 @@ static entry *phonebook_appendByFile(char *fileName)
     /* Deliver the jobs to all thread and wait for completing  */
 
     for (int i = 0; i < THREAD_NUM; i++)
-        pthread_create(&threads[i], NULL, (void *)&append, (void *)thread_args[i]);
+        pthread_create(&threads[i], NULL, (void *)&append_on_head, (void *)thread_args[i]);
 
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_join(threads[i], NULL);
@@ -278,12 +294,6 @@ static int phonebook_removeEach(char *lastName)
         right_succ = right->pNext;
         if(!is_marked_ref(right_succ)) {
             if(__sync_val_compare_and_swap(&(right->pNext), right_succ, get_marked_ref(right_succ)) == right_succ) {
-//			if(right == entryHead)
-//		printf("[[Remove]]:%s %s %lld %lld\n",
-//			right->lastName,
-//			((entry*)get_unmarked_ref(right->pNext))->lastName,
-//			right->pNext,
-//			entryHead->pNext->lastName);
                 return 1;
             }
         }
@@ -292,11 +302,6 @@ static int phonebook_removeEach(char *lastName)
 
 static void phonebook_remove(void *arg)
 {
-    struct timespec start, end;
-    double cpu_time;
-
-    clock_gettime(CLOCK_REALTIME, &start);
-
     thread_arg *t_arg = (thread_arg *) arg;
 
     int count = 0, len;
@@ -306,17 +311,11 @@ static void phonebook_remove(void *arg)
         phonebook_removeEach(i);
     }
 
-    clock_gettime(CLOCK_REALTIME, &end);
-    cpu_time = diff_in_second(start, end);
-
     pthread_exit(NULL);
 }
 
 static int phonebook_removeByFile(char *fileName)
 {
-    /*text_align(fileName, ALIGN_REMOVE_FILE, MAX_LAST_NAME_SIZE);
-    int fd = open(ALIGN_REMOVE_FILE, O_RDONLY | O_NONBLOCK);
-    file_size = fsize(ALIGN_REMOVE_FILE);*/
     int fd = open(fileName, O_RDONLY | O_NONBLOCK);
     file_size = fsize(fileName);
 
@@ -324,10 +323,11 @@ static int phonebook_removeByFile(char *fileName)
     assert(map && "mmap error");
 
     data_number = file_size / MAX_LAST_NAME_SIZE;
+    data_number = REMOVE_NUM;
 
     pthread_setconcurrency(THREAD_NUM + 10);
     for(int i = 0; i < THREAD_NUM ; ++i)
-        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + file_size, i, THREAD_NUM, NULL);
+        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + REMOVE_NUM * MAX_LAST_NAME_SIZE, i, THREAD_NUM, NULL);
 
     for(int i = 0; i< THREAD_NUM; ++i)
         pthread_create(&threads[i], NULL, (void *)&phonebook_remove, (void *)thread_args[i]);
