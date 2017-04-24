@@ -22,6 +22,8 @@
 #include "lock_if.h"
 
 #define ALIGN_FILE "align.txt"
+#define ALIGN_APPEND_FILE "align_append.txt"
+#define ALIGN_REMOVE_FILE "align_remove.txt"
 
 #ifndef THREAD_NUM
 #define THREAD_NUM 4
@@ -32,6 +34,7 @@ static pthread_t threads[THREAD_NUM];
 static thread_arg *thread_args[THREAD_NUM];
 static char *map;
 static off_t file_size;
+static int data_number;
 
 static entry *findName(char lastname[], entry *pHead)
 {
@@ -158,8 +161,6 @@ static entry *phonebook_appendByFile(char *fileName)
     close(fd);
     pthread_setconcurrency(0);
 
-    show_size();
-
     /* Return head of linked list */
     return entryHead;
 }
@@ -186,23 +187,26 @@ static void phonebook_free()
 
 void removeEach(char *name)
 {
+
+    //printf("%s\n",name);
     entry *tempEntry = entryHead;
-    LOCK(tempEntry->lock);
+    //LOCK(tempEntry->lock);
 
     if(tempEntry->pNext == NULL) {
-        UNLOCK(tempEntry->lock);
+        //UNLOCK(tempEntry->lock);
         return;
     }
 
     entry *elem = tempEntry->pNext;
-    LOCK(elem->lock);
+//    LOCK(elem->lock);
 
     while(elem->pNext != NULL) {
         if(strncasecmp(elem->lastName, name,strlen(name)) == 0) {
+
+            LOCK(tempEntry->lock);
+            //LOCK(elem->lock);
             tempEntry->pNext = elem->pNext;
-
-
-            UNLOCK(elem->lock);
+            //UNLOCK(elem->lock);
             DESTROY_LOCK(elem->lock);
             //free(elem->lock);
             //free(elem);
@@ -210,30 +214,79 @@ void removeEach(char *name)
             UNLOCK(tempEntry->lock);
             return;
         } else {
-            UNLOCK(tempEntry->lock);
+            //UNLOCK(tempEntry->lock);
             tempEntry = elem;
             elem = elem->pNext;
-            LOCK(elem->lock);
+            //LOCK(elem->lock);
         }
     }
 
     if(strncasecmp(elem->lastName, name,strlen(name))==0) {
+        LOCK(tempEntry->lock);
         tempEntry->pNext = elem->pNext;
 
-        printf("cayon3\n");
-        UNLOCK(elem->lock);
-        //DESTROY_LOCK(elem->lock);
+        //printf("cayon3\n");
+        //UNLOCK(elem->lock);
+        DESTROY_LOCK(elem->lock);
         //free(elem->lock);
         //free(elem);
         UNLOCK(tempEntry->lock);
     } else {
-        UNLOCK(elem->lock);
-        UNLOCK(tempEntry->lock);
+        //UNLOCK(elem->lock);
+        //UNLOCK(tempEntry->lock);
     }
+}
+
+static void phonebook_remove(void *arg)
+{
+    struct timespec start, end;
+    double cpu_time;
+
+    clock_gettime(CLOCK_REALTIME, &start);
+
+    thread_arg *t_arg = (thread_arg *) arg;
+
+    int count = 0, len;
+
+    for (char *i = t_arg->data_begin; i < t_arg->data_end; i+= MAX_LAST_NAME_SIZE * t_arg->numOfThread, ++count) {
+        if(i[strlen(i)-1]=='\n') i[strlen(i)-1] = '\0';
+        removeEach(i);
+    }
+
+    clock_gettime(CLOCK_REALTIME, &end);
+    cpu_time = diff_in_second(start, end);
+
+    pthread_exit(NULL);
 }
 
 static entry *phonebook_removeByFile(char *fileName)
 {
+    /*text_align(fileName, ALIGN_REMOVE_FILE, MAX_LAST_NAME_SIZE);
+    int fd = open(ALIGN_REMOVE_FILE, O_RDONLY | O_NONBLOCK);
+    file_size = fsize(ALIGN_REMOVE_FILE);*/
+
+    int fd = open(fileName,O_RDONLY | O_NONBLOCK);
+    file_size = fsize(fileName);
+
+    map = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    assert(map && "mmap error");
+
+    data_number = file_size / MAX_LAST_NAME_SIZE;
+
+    pthread_setconcurrency(THREAD_NUM + 1);
+    for(int i = 0; i < THREAD_NUM ; ++i)
+        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + file_size, i, THREAD_NUM, NULL);
+
+    for(int i = 0; i< THREAD_NUM; ++i)
+        pthread_create(&threads[i], NULL, (void *)&phonebook_remove, (void *)thread_args[i]);
+
+    for(int i = 0; i< THREAD_NUM; ++i)
+        pthread_join(threads[i], NULL);
+
+    close(fd);
+    pthread_setconcurrency(0);
+
+    return 1;
 }
 
 void show_size()
@@ -255,6 +308,7 @@ struct __PHONEBOOK_API Phonebook = {
     .findName = phonebook_findName,
     .size = show_size,
     .free = phonebook_free,
+    .remove = removeEach,
 };
 
 static double diff_in_second(struct timespec t1, struct timespec t2)
