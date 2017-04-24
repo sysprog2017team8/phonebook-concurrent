@@ -37,7 +37,8 @@ static void phonebook_create()
 
 static entry *phonebook_appendByFile(char *fileName)
 {
-    FILE *fp = fopen(fileName,"r");
+    //FILE *fp = fopen(fileName,"r");
+    FILE *fp = fopen("./dictionary/words.txt","r");
     if (!fp) {
         printf("cannot open the file\n");
         return NULL;
@@ -68,6 +69,10 @@ static entry *phonebook_append(char *lastName)
     return entryHead;
 }
 
+static entry *phonebook_removeByFile(char *fileName)
+{
+}
+
 static entry *phonebook_findName(char *lastName)
 {
     return findName(lastName, entryHead);
@@ -87,6 +92,7 @@ static void phonebook_free()
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
+    .removeByFile = phonebook_removeByFile,
     .append = phonebook_append,
     .findName = phonebook_findName,
     .free = phonebook_free,

@@ -20,6 +20,7 @@
 #endif
 
 #define DICT_FILE "./dictionary/words.txt"
+#define APPEND_FILE "./dictionary/append.txt"
 #define REMOVE_FILE "./dictionary/remove.txt"
 
 static double diff_in_second(struct timespec t1, struct timespec t2)
@@ -80,7 +81,7 @@ int main(int argc, char *argv[])
     Stopwatch.start();
 
     /*append lastname with DICT_FILE*/
-    pHead = Phonebook.appendByFile(DICT_FILE);
+    pHead = Phonebook.appendByFile(APPEND_FILE);
 
     /* Stop timing */
     fprintf(output,"%lf ",Stopwatch.end("Phonebook.appendByFile()"));
@@ -104,6 +105,14 @@ int main(int argc, char *argv[])
 
     /* Stop timing */
     fprintf(output,"%lf ",Stopwatch.end("Phonebook.findName()"));
+
+    /* Start timing */
+    Stopwatch.start();
+
+    Phonebook.removeByFile(REMOVE_FILE);
+
+    fprintf(output,"%lf ",Stopwatch.end("Phonebook.removeByFile"));
+
 
     /* Start timing */
     Stopwatch.start();
