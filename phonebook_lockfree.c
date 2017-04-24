@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 
-#include "phonebook_opt.h"
+#include "phonebook_lockfree.h"
 #include "debug.h"
 #include "text_align.h"
 
@@ -23,15 +23,96 @@
 #define THREAD_NUM 4
 #endif
 
-static entry *entryHead,*entry_pool;
+static entry *entryHead,*entry_pool,*entrytail,*tmpHead;
 static pthread_t threads[THREAD_NUM];
 static thread_arg *thread_args[THREAD_NUM];
 static char *map;
+static int data_number;
+static int *space_used; //0 for not used, 1 for used, -1 for deleted
 static off_t file_size;
+
+static inline
+int is_marked_ref(long i)
+{
+    return (int)(i & 0x1L);
+}
+
+static inline
+long get_unmarked_ref(long i)
+{
+    return i & ~0x1L;
+}
+
+static inline
+long get_marked_ref(long i)
+{
+    return i | 0x1L;
+}
+
+int xx = 0;
+
+static entry *search(char *str, entry **left_entry)
+{
+    int i;
+    int len = strlen(str);
+    entry *j,*j_next,*h;
+    entry *left_next, *right;
+    left_next = right = NULL;
+    while(1) {
+        h = j = tmpHead;
+        j_next = j->pNext;
+        while(1) {
+            while( is_marked_ref(j_next) || strncasecmp(str,j_next->lastName,len)!=0 ) {
+                if(!is_marked_ref(j_next)) {
+                    __sync_val_compare_and_swap(&tmpHead,h,j);
+                    (*left_entry) = j;
+                    left_next = j_next;
+                }
+
+                j = get_unmarked_ref(j_next);
+                if(j_next == entrytail)
+                    break;
+                j_next = j->pNext;
+            }
+
+            if(j_next == entrytail) break;
+
+            if( !is_marked_ref(j_next) && strlen(j_next->lastName) == len)
+                break;
+
+            if(!is_marked_ref(j_next)) {
+                __sync_val_compare_and_swap(&tmpHead,h,j);
+                (*left_entry) = j;
+                left_next = j_next;
+            }
+            j = get_unmarked_ref(j_next);
+            j_next = j_next->pNext;
+        }
+
+        right = j;
+
+        if(left_next == right) {
+            if(!is_marked_ref(right->pNext))
+                return right;
+        } else if(__sync_val_compare_and_swap(&((*left_entry)->pNext), left_next, right) == left_next ) {
+            if(!is_marked_ref(right->pNext)) {
+                return right;
+            }
+        }
+
+    }
+}
 
 static entry *findName(char lastname[], entry *pHead)
 {
+    tmpHead = entryHead;
+    entry *left, *right;
+    left = right = NULL;
+    xx = 2;
+    right = search(lastname, &left);
+    return right->pNext;
     size_t len = strlen(lastname);
+    pHead = entryHead;
     while (pHead) {
         if (strncasecmp(lastname, pHead->lastName, len) == 0
                 && (pHead->lastName[len] == '\n' ||
@@ -74,20 +155,35 @@ static void append(void *arg)
 
     thread_arg *t_arg = (thread_arg *) arg;
 
-    int count = 0;
+    int count = 0, len;
+    entry *left, *right;
+
     entry *j = t_arg->lEntryPool_begin;
+
     for (char *i = t_arg->data_begin; i < t_arg->data_end;
             i += MAX_LAST_NAME_SIZE * t_arg->numOfThread,
             j += t_arg->numOfThread, count++) {
+
+        left = right = NULL;
+        if(i[strlen(i)-1]=='\n') i[strlen(i)-1] = '\0';
+        j->lastName = i;
+        j->pNext = NULL;
+        len = strlen(i);
+
         /* Append the new at the end of the local linked list */
-        t_arg->lEntry_tail->pNext = j;
-        t_arg->lEntry_tail = t_arg->lEntry_tail->pNext;
-        t_arg->lEntry_tail->lastName = i;
-        t_arg->lEntry_tail->pNext = NULL;
-        t_arg->lEntry_tail->dtl = NULL;
+        while(1) {
+            right = search(i, &left);
+            if(right != NULL && strncasecmp(right->lastName,i,len) == 0)
+                break;
+            j->pNext = right;
+            if(__sync_val_compare_and_swap(&(left->pNext), right, j) == right)
+                break;
+        }
+
         DEBUG_LOG("thread %d t_argend string = %s\n",
-                  t_arg->threadID, t_arg->lEntry_tail->lastName);
+                  t_arg->threadID, new -> lastName);
     }
+
     clock_gettime(CLOCK_REALTIME, &end);
     cpu_time = diff_in_second(start, end);
 
@@ -104,24 +200,43 @@ static void show_entry(entry *pHead)
     }
 }
 
+static void phonebook_size()
+{
+    long long cs = 0;
+    tmpHead = entryHead;
+    while(tmpHead) {
+        ++cs;
+        if((long long)(tmpHead->pNext) %2) --cs;
+        tmpHead = ((entry *)get_unmarked_ref(tmpHead))->pNext;
+    }
+    printf("Entries of link list: %lld\n",cs-2);
+}
+
 static void phonebook_create()
 {
 }
 
 static entry *phonebook_appendByFile(char *fileName)
 {
-    /*text_align(fileName, ALIGN_FILE, MAX_LAST_NAME_SIZE);
+    text_align(fileName, ALIGN_FILE, MAX_LAST_NAME_SIZE);
     int fd = open(ALIGN_FILE, O_RDONLY | O_NONBLOCK);
-    file_size = fsize(ALIGN_FILE);*/
-
-    int fd = open(fileName, O_RDONLY | O_NONBLOCK);
-    file_size = fsize(fileName);
-
+    file_size = fsize(ALIGN_FILE);
     /* Allocate the resource at first */
     map = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     assert(map && "mmap error");
-    entry_pool = (entry *) malloc(sizeof(entry) * file_size / MAX_LAST_NAME_SIZE);
+
+    data_number = file_size / MAX_LAST_NAME_SIZE;
+    entry_pool = (entry *) malloc(sizeof(entry) * data_number);
+    space_used = (int *) malloc(sizeof(int) * data_number);
     assert(entry_pool && "entry_pool error");
+
+    entryHead = malloc(sizeof(entry));
+    entrytail = malloc(sizeof(entry));
+    entryHead -> lastName = "TOTALYNOTIMPOSSIBLENAME";
+    entryHead -> pNext = entrytail;
+    entrytail -> lastName = "TOTALYNOTIMPOSSIBLENAME";
+    entrytail -> pNext = NULL;
+    tmpHead = entryHead;
 
     /* Prepare for mutli-threading */
     pthread_setconcurrency(THREAD_NUM + 1);
@@ -137,64 +252,9 @@ static entry *phonebook_appendByFile(char *fileName)
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_join(threads[i], NULL);
 
-
-    /* Connect the linked list of each thread */
-    entryHead = thread_args[0]->lEntry_head->pNext;
-    DEBUG_LOG("Connect 0 head string %s %p\n", entryHead->lastName, thread_args[0]->data_begin);
-    entry *e = thread_args[0]->lEntry_tail;
-    DEBUG_LOG("Connect 0 tail string %s %p\n", e->lastName, thread_args[0]->data_begin);
-    DEBUG_LOG("round 0\n");
-
-    for (int i = 1; i < THREAD_NUM; i++) {
-        e->pNext = thread_args[i]->lEntry_head->pNext;
-        DEBUG_LOG("Connect %d head string %s %p\n", i,e->pNext->lastName, thread_args[i]->data_begin);
-
-        e = thread_args[i]->lEntry_tail;
-        DEBUG_LOG("Connect %d tail string %s %p\n", i, e->lastName, thread_args[i]->data_begin);
-        DEBUG_LOG("round %d\n", i);
-    }
     close(fd);
     pthread_setconcurrency(0);
     /* Return head of linked list */
-    return entryHead;
-}
-
-static void removeEntry(void *arg)
-{
-    thread_arg *t_arg = (thread_arg *) arg;
-
-}
-
-static entry *phonebook_removeByFile(char *filename)
-{
-    int fd = open(filename, O_RDONLY | O_NONBLOCK);
-    off_t size = fsize(filename);
-
-
-    /* Allocate the resource at first */
-    char *file_map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-    assert(file_map && "mmap error");
-
-    /* Prepare for mutli-threading */
-    pthread_setconcurrency(THREAD_NUM + 1);
-    for (int i = 0; i < THREAD_NUM; i++)
-        thread_args[i] = createThread_arg(file_map + MAX_LAST_NAME_SIZE * i,file_map + size, i,THREAD_NUM, entryHead + i);
-
-    /* Deliver the jobs to all thread and wait for completing  */
-
-    for (int i = 0; i < THREAD_NUM; i++)
-        pthread_create(&threads[i], NULL, (void *)&removeEntry, (void *)thread_args[i]);
-
-
-    for (int i = 0; i < THREAD_NUM; i++)
-        pthread_join(threads[i], NULL);
-
-    close(fd);
-    munmap(file_map,size);
-}
-
-static entry *test(char *str)
-{
     return entryHead;
 }
 
@@ -208,7 +268,7 @@ static void phonebook_free()
     entry *e = entryHead;
     while (e) {
         free(e->dtl);
-        e = e->pNext;
+        e = get_unmarked_ref(e->pNext);
     }
 
     free(entry_pool);
@@ -220,16 +280,32 @@ static void phonebook_free()
 
 static int phonebook_remove(char *lastName)
 {
+    entry *left, *right, *right_succ;
+    left = right = NULL;
+    int len = strlen(lastName);
+    while(1) {
+        tmpHead = entryHead;
+        right = search(lastName, &left);
+        if(right == NULL || strncasecmp(right->lastName,lastName,len) == 0) {
+            return 0;
+        }
+        right_succ = right->pNext;
+        if(!is_marked_ref(right_succ)) {
+            if(__sync_val_compare_and_swap(&(right->pNext), right_succ, get_marked_ref(right_succ)) == right_succ) {
+                return 1;
+            }
+        }
+    }
 }
 
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
-    .removeByFile = test,
     .findName = phonebook_findName,
     .remove = phonebook_remove,
     .free = phonebook_free,
+    .size = phonebook_size,
 };
 
 static double diff_in_second(struct timespec t1, struct timespec t2)
