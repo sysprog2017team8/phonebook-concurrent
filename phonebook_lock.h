@@ -8,7 +8,7 @@
 
 #define MAX_LAST_NAME_SIZE 16
 
-#define OPT 1
+#define LOCKLOCK 1
 
 typedef struct _detail {
     char firstName[16];

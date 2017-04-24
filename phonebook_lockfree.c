@@ -218,9 +218,12 @@ static void phonebook_create()
 
 static entry *phonebook_appendByFile(char *fileName)
 {
-    text_align(fileName, ALIGN_FILE, MAX_LAST_NAME_SIZE);
+    /*text_align(fileName, ALIGN_FILE, MAX_LAST_NAME_SIZE);
     int fd = open(ALIGN_FILE, O_RDONLY | O_NONBLOCK);
-    file_size = fsize(ALIGN_FILE);
+    file_size = fsize(ALIGN_FILE);*/
+    int fd = open(fileName, O_RDONLY | O_NONBLOCK);
+    file_size = fsize(fileName);
+
     /* Allocate the resource at first */
     map = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     assert(map && "mmap error");
@@ -298,12 +301,17 @@ static int phonebook_remove(char *lastName)
     }
 }
 
+static entry *phonebook_removeByFile(char *fileName)
+{
+}
+
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
     .findName = phonebook_findName,
     .remove = phonebook_remove,
+    .removeByFile = phonebook_removeByFile,
     .free = phonebook_free,
     .size = phonebook_size,
 };

@@ -17,7 +17,7 @@ ifeq ($(strip $(DEBUG)),1)
 CFLAGS_opt += -DDEBUG -g
 endif
 
-EXEC = phonebook_orig phonebook_opt phonebook_lockfree
+EXEC = phonebook_orig phonebook_opt phonebook_lock phonebook_lockfree
 GIT_HOOKS := .git/hooks/applied
 .PHONY: all
 all: $(GIT_HOOKS) $(EXEC)
@@ -41,6 +41,11 @@ phonebook_opt: $(SRCS_common) phonebook_opt.c phonebook_opt.h text_align.c
 		-DIMPL="\"$@.h\"" -o $@ \
 		$(SRCS_common) $@.c text_align.c
 
+phonebook_lock: $(SRCS_common) phonebook_lock.c phonebook_lock.h text_align.c
+	$(CC) $(CFLAGS_common) $(CFLAGS_lockfree) \
+		-DIMPL="\"$@.h\"" -o $@ \
+		$(SRCS_common) $@.c text_align.c
+
 phonebook_lockfree: $(SRCS_common) phonebook_lockfree.c phonebook_lockfree.h text_align.c
 	$(CC) $(CFLAGS_common) $(CFLAGS_lockfree) \
 		-DIMPL="\"$@.h\"" -o $@ \
@@ -51,14 +56,15 @@ run: $(EXEC)
 	watch -d -t "./phonebook_orig && echo 3 | sudo tee /proc/sys/vm/drop_caches"
 
 cache-test: $(EXEC)
-	rm -f orig.txt
 	rm -f opt.txt
-	perf stat --repeat 100 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_orig
+	rm -f lock.txt
+	rm -f lockfree.txt
 	perf stat --repeat 100 \
 		-e cache-misses,cache-references,instructions,cycles \
 		./phonebook_opt
+	perf stat --repeat 100 \
+		-e cache-misses,cache-references,instructions,cycles \
+		./phonebook_lock
 	perf stat --repeat 100 \
 		-e cache-misses,cache-references,instructions,cycles \
 		./phonebook_lockfree
@@ -67,14 +73,14 @@ perf-set:
 	sudo sh -c " echo 0 > /proc/sys/kernel/perf_event_paranoid"
 	sudo sh -c " echo 0 > /proc/sys/kernel/kptr_restrict"
 
-astyle:
-	astyle --style=kr --indent=spaces=4 --indent-switches --suffix=none *.[ch]
-
 output.txt: cache-test calculate
-	./calculate "create() appendByFile() findName() removeByFile() free()" orig.txt opt.txt $@
+	./calculate "create() appendByFile() findName() removeByFile() free()" opt.txt lock.txt lockfree.txt $@
 
 plot: output.txt
 	gnuplot scripts/runtime.gp
+
+plot-cll: output.txt
+	gnuplot scripts/cllruntime.gp
 
 calculate: calculate.c
 	$(CC) $(CFLAGS_common) $^ -o $@
