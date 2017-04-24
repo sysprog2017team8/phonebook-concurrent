@@ -17,7 +17,8 @@
 #include "debug.h"
 #include "text_align.h"
 
-#define ALIGN_FILE "align.txt"
+#define ALIGN_APPEND_FILE "align_append.txt"
+#define ALIGN_REMOVE_FILE "align_remove.txt"
 
 #ifndef THREAD_NUM
 #define THREAD_NUM 4
@@ -28,7 +29,6 @@ static pthread_t threads[THREAD_NUM];
 static thread_arg *thread_args[THREAD_NUM];
 static char *map;
 static int data_number;
-static int *space_used; //0 for not used, 1 for used, -1 for deleted
 static off_t file_size;
 
 static inline
@@ -51,7 +51,7 @@ long get_marked_ref(long i)
 
 int xx = 0;
 
-static entry *search(char *str, entry **left_entry)
+static entry *search(char *str, entry **left_entry, entry *Start)
 {
     int i;
     int len = strlen(str);
@@ -59,34 +59,35 @@ static entry *search(char *str, entry **left_entry)
     entry *left_next, *right;
     left_next = right = NULL;
     while(1) {
-        h = j = tmpHead;
+        j = Start;
         j_next = j->pNext;
         while(1) {
-            while( is_marked_ref(j_next) || strncasecmp(str,j_next->lastName,len)!=0 ) {
+            while( is_marked_ref(j_next) || strncasecmp(str,j->lastName,len)!=0 ) {
                 if(!is_marked_ref(j_next)) {
-                    __sync_val_compare_and_swap(&tmpHead,h,j);
+                    __sync_val_compare_and_swap(&tmpHead,tmpHead,j);
                     (*left_entry) = j;
                     left_next = j_next;
                 }
 
                 j = get_unmarked_ref(j_next);
-                if(j_next == entrytail)
+                if(j == entrytail)
                     break;
                 j_next = j->pNext;
             }
 
-            if(j_next == entrytail) break;
+            if(j == entrytail) break;
 
-            if( !is_marked_ref(j_next) && strlen(j_next->lastName) == len)
+            if(strlen(j->lastName) == len)
                 break;
 
             if(!is_marked_ref(j_next)) {
-                __sync_val_compare_and_swap(&tmpHead,h,j);
+                __sync_val_compare_and_swap(&tmpHead,tmpHead,j);
                 (*left_entry) = j;
                 left_next = j_next;
             }
             j = get_unmarked_ref(j_next);
-            j_next = j_next->pNext;
+            if(j == entrytail) break;
+            j_next = j->pNext;
         }
 
         right = j;
@@ -99,33 +100,15 @@ static entry *search(char *str, entry **left_entry)
                 return right;
             }
         }
-
     }
 }
 
 static entry *findName(char lastname[], entry *pHead)
 {
-    tmpHead = entryHead;
     entry *left, *right;
     left = right = NULL;
-    xx = 2;
-    right = search(lastname, &left);
-    return right->pNext;
-    size_t len = strlen(lastname);
-    pHead = entryHead;
-    while (pHead) {
-        if (strncasecmp(lastname, pHead->lastName, len) == 0
-                && (pHead->lastName[len] == '\n' ||
-                    pHead->lastName[len] == '\0')) {
-            pHead->lastName[len] = '\0';
-            if (!pHead->dtl)
-                pHead->dtl = (pdetail) malloc(sizeof(detail));
-            return pHead;
-        }
-        DEBUG_LOG("find string = %s\n", pHead->lastName);
-        pHead = pHead->pNext;
-    }
-    return NULL;
+    right = search(lastname, &left, entryHead);
+    return right;
 }
 
 static thread_arg *createThread_arg(char *data_begin, char *data_end,
@@ -170,10 +153,11 @@ static void append(void *arg)
         j->pNext = NULL;
         len = strlen(i);
 
+
         /* Append the new at the end of the local linked list */
         while(1) {
-            right = search(i, &left);
-            if(right != NULL && strncasecmp(right->lastName,i,len) == 0)
+            right = search(i, &left, tmpHead);
+            if(strncasecmp(right->lastName,i,len) == 0 && strlen(right->lastName) == len)
                 break;
             j->pNext = right;
             if(__sync_val_compare_and_swap(&(left->pNext), right, j) == right)
@@ -203,13 +187,15 @@ static void show_entry(entry *pHead)
 static void phonebook_size()
 {
     long long cs = 0;
-    tmpHead = entryHead;
-    while(tmpHead) {
+    tmpHead = entryHead -> pNext;
+    while(tmpHead != entrytail) {
         ++cs;
-        if((long long)(tmpHead->pNext) %2) --cs;
-        tmpHead = ((entry *)get_unmarked_ref(tmpHead))->pNext;
+        if((long long)(tmpHead->pNext) %2) {
+            --cs;
+        }
+        tmpHead = (entry *)get_unmarked_ref(tmpHead->pNext);
     }
-    printf("Entries of link list: %lld\n",cs-2);
+    printf("Entries of link list: %lld\n",cs);
 }
 
 static void phonebook_create()
@@ -230,14 +216,13 @@ static entry *phonebook_appendByFile(char *fileName)
 
     data_number = file_size / MAX_LAST_NAME_SIZE;
     entry_pool = (entry *) malloc(sizeof(entry) * data_number);
-    space_used = (int *) malloc(sizeof(int) * data_number);
     assert(entry_pool && "entry_pool error");
 
     entryHead = malloc(sizeof(entry));
     entrytail = malloc(sizeof(entry));
-    entryHead -> lastName = "TOTALYNOTIMPOSSIBLENAME";
+    entryHead -> lastName = "TOTALYNOTIMPOSSIBLENAME_HEAD";
     entryHead -> pNext = entrytail;
-    entrytail -> lastName = "TOTALYNOTIMPOSSIBLENAME";
+    entrytail -> lastName = "TOTALYNOTIMPOSSIBLENAME_TAIL";
     entrytail -> pNext = NULL;
     tmpHead = entryHead;
 
@@ -250,7 +235,6 @@ static entry *phonebook_appendByFile(char *fileName)
 
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_create(&threads[i], NULL, (void *)&append, (void *)thread_args[i]);
-
 
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_join(threads[i], NULL);
@@ -281,37 +265,89 @@ static void phonebook_free()
     munmap(map, file_size);
 }
 
-static int phonebook_remove(char *lastName)
+static int phonebook_removeEach(char *lastName)
 {
     entry *left, *right, *right_succ;
     left = right = NULL;
     int len = strlen(lastName);
     while(1) {
-        tmpHead = entryHead;
-        right = search(lastName, &left);
-        if(right == NULL || strncasecmp(right->lastName,lastName,len) == 0) {
+        right = search(lastName, &left, entryHead);
+        if(right == NULL || strncasecmp(right->lastName,lastName,len) != 0) {
             return 0;
         }
         right_succ = right->pNext;
         if(!is_marked_ref(right_succ)) {
             if(__sync_val_compare_and_swap(&(right->pNext), right_succ, get_marked_ref(right_succ)) == right_succ) {
+//			if(right == entryHead)
+//		printf("[[Remove]]:%s %s %lld %lld\n",
+//			right->lastName,
+//			((entry*)get_unmarked_ref(right->pNext))->lastName,
+//			right->pNext,
+//			entryHead->pNext->lastName);
                 return 1;
             }
         }
     }
 }
 
-static entry *phonebook_removeByFile(char *fileName)
+static void phonebook_remove(void *arg)
 {
+    struct timespec start, end;
+    double cpu_time;
+
+    clock_gettime(CLOCK_REALTIME, &start);
+
+    thread_arg *t_arg = (thread_arg *) arg;
+
+    int count = 0, len;
+
+    for (char *i = t_arg->data_begin; i < t_arg->data_end; i+= MAX_LAST_NAME_SIZE * t_arg->numOfThread, ++count) {
+        if(i[strlen(i)-1]=='\n') i[strlen(i)-1] = '\0';
+        phonebook_removeEach(i);
+    }
+
+    clock_gettime(CLOCK_REALTIME, &end);
+    cpu_time = diff_in_second(start, end);
+
+    pthread_exit(NULL);
+}
+
+static int phonebook_removeByFile(char *fileName)
+{
+    /*text_align(fileName, ALIGN_REMOVE_FILE, MAX_LAST_NAME_SIZE);
+    int fd = open(ALIGN_REMOVE_FILE, O_RDONLY | O_NONBLOCK);
+    file_size = fsize(ALIGN_REMOVE_FILE);*/
+    int fd = open(fileName, O_RDONLY | O_NONBLOCK);
+    file_size = fsize(fileName);
+
+    map = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    assert(map && "mmap error");
+
+    data_number = file_size / MAX_LAST_NAME_SIZE;
+
+    pthread_setconcurrency(THREAD_NUM + 10);
+    for(int i = 0; i < THREAD_NUM ; ++i)
+        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + file_size, i, THREAD_NUM, NULL);
+
+    for(int i = 0; i< THREAD_NUM; ++i)
+        pthread_create(&threads[i], NULL, (void *)&phonebook_remove, (void *)thread_args[i]);
+
+    for(int i = 0; i< THREAD_NUM; ++i)
+        pthread_join(threads[i], NULL);
+
+    close(fd);
+    pthread_setconcurrency(0);
+
+    return 1;
 }
 
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
-    .findName = phonebook_findName,
-    .remove = phonebook_remove,
     .removeByFile = phonebook_removeByFile,
+    .findName = phonebook_findName,
+    .remove = phonebook_removeEach,
     .free = phonebook_free,
     .size = phonebook_size,
 };

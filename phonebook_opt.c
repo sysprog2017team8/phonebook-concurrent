@@ -159,45 +159,6 @@ static entry *phonebook_appendByFile(char *fileName)
     return entryHead;
 }
 
-static void removeEntry(void *arg)
-{
-    thread_arg *t_arg = (thread_arg *) arg;
-
-}
-
-static entry *phonebook_removeByFile(char *filename)
-{
-    int fd = open(filename, O_RDONLY | O_NONBLOCK);
-    off_t size = fsize(filename);
-
-
-    /* Allocate the resource at first */
-    char *file_map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-    assert(file_map && "mmap error");
-
-    /* Prepare for mutli-threading */
-    pthread_setconcurrency(THREAD_NUM + 1);
-    for (int i = 0; i < THREAD_NUM; i++)
-        thread_args[i] = createThread_arg(file_map + MAX_LAST_NAME_SIZE * i,file_map + size, i,THREAD_NUM, entryHead + i);
-
-    /* Deliver the jobs to all thread and wait for completing  */
-
-    for (int i = 0; i < THREAD_NUM; i++)
-        pthread_create(&threads[i], NULL, (void *)&removeEntry, (void *)thread_args[i]);
-
-
-    for (int i = 0; i < THREAD_NUM; i++)
-        pthread_join(threads[i], NULL);
-
-    close(fd);
-    munmap(file_map,size);
-}
-
-static entry *test(char *str)
-{
-    return entryHead;
-}
-
 static entry *phonebook_findName(char *lastName)
 {
     return findName(lastName, entryHead);
@@ -220,16 +181,28 @@ static void phonebook_free()
 
 static int phonebook_remove(char *lastName)
 {
+    printf("no remove\n");
+}
+
+static void phonebook_size()
+{
+    printf("Entries of link list: %d\n",0);
+}
+
+static entry *phonebook_removeByFile(char *fileName)
+{
+    printf("no removeByFile\n");
 }
 
 /* API */
 struct __PHONEBOOK_API Phonebook = {
     .create = phonebook_create,
     .appendByFile = phonebook_appendByFile,
-    .removeByFile = test,
+    .removeByFile = phonebook_removeByFile,
     .findName = phonebook_findName,
     .remove = phonebook_remove,
     .free = phonebook_free,
+    .size = phonebook_size,
 };
 
 static double diff_in_second(struct timespec t1, struct timespec t2)

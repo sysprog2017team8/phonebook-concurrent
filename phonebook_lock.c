@@ -244,6 +244,7 @@ void show_size()
         tempHead = tempHead->pNext;
         CCount++;
     }
+    printf("Entries of link list: %d\n",CCount);
 }
 
 /* API */
@@ -252,6 +253,7 @@ struct __PHONEBOOK_API Phonebook = {
     .appendByFile = phonebook_appendByFile,
     .removeByFile = phonebook_removeByFile,
     .findName = phonebook_findName,
+    .size = show_size,
     .free = phonebook_free,
 };
 

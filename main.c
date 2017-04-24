@@ -100,12 +100,6 @@ int main(int argc, char *argv[])
            "Did you implement findName() in " IMPL "?");
     assert(0 == strcmp(Phonebook.findName(input)->lastName, "zyxel"));
 
-
-
-    assert(Phonebook.findName(input) &&
-           "Did you implement findName() in " IMPL "?");
-    assert(0 == strcmp(Phonebook.findName(input)->lastName, "zyxel"));
-
 #if defined(__GNUC__)
     __builtin___clear_cache((char *) pHead, (char *) pHead + sizeof(entry));
 #endif
@@ -121,10 +115,13 @@ int main(int argc, char *argv[])
     /* Start timing */
     Stopwatch.start();
 
-    Phonebook.removeByFile(REMOVE_FILE);
+    Phonebook.removeByFile(APPEND_FILE);
 
+    /* Stop timing */
     fprintf(output,"%lf ",Stopwatch.end("Phonebook.removeByFile"));
 
+    /* check */
+    Phonebook.size();
 
     /* Start timing */
     Stopwatch.start();

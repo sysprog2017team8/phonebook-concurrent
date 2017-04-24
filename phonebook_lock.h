@@ -49,8 +49,8 @@ extern struct __PHONEBOOK_API {
     entry *(*removeByFile)(char *fileName);
     entry *(*remove)(char *lastName);
     entry *(*findName)(char *lastName);
+    void (*size)();
     void (*free)();
-
 } Phonebook;
 
 static double diff_in_second(struct timespec t1, struct timespec t2);
