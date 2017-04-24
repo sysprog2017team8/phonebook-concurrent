@@ -20,6 +20,7 @@
 #endif
 
 #define DICT_FILE "./dictionary/words.txt"
+#define REMOVE_FILE "./dictionary/remove.txt"
 
 static double diff_in_second(struct timespec t1, struct timespec t2)
 {
