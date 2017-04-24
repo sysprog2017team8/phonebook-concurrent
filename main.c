@@ -104,6 +104,23 @@ int main(int argc, char *argv[])
     /* Stop timing */
     fprintf(output,"%lf ",Stopwatch.end("Phonebook.findName()"));
 
+    /*Start timing */
+    Stopwatch.start();
+
+    Phonebook.removeByFile(DICT_FILE);
+    /*	Phonebook.remove("aaaa");
+    printf("cayon1\n");
+
+    	Phonebook.remove("zzzzzz");
+    printf("cayon2\n");
+    	Phonebook.remove("tota");
+    printf("cayon3\n");
+    	Phonebook.remove("totaal");
+    */
+
+    /*Stop timing */
+    fprintf(output,"%lf ",Stopwatch.end("Phonebook.removeByFile()"));
+
     /* Start timing */
     Stopwatch.start();
 
