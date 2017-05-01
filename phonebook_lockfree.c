@@ -26,9 +26,9 @@
 
 #define REMOVE_NUM 100
 
-static entry *entryHead,*entry_pool,*entrytail,*tmpHead;
+static entry *entryHead,*entry_pool,*entrytail;
 static pthread_t threads[THREAD_NUM];
-static thread_arg *thread_args[THREAD_NUM];
+static thread_arg *thread_args[THREAD_NUM],*thread_args_pool;
 static char *map;
 static int data_number;
 static off_t file_size;
@@ -66,7 +66,6 @@ static entry *search(char *str, entry **left_entry, entry *Start)
         while(1) {
             while( is_marked_ref(j_next) || strncasecmp(str,j->lastName,len)!=0 ) {
                 if(!is_marked_ref(j_next)) {
-                    __sync_val_compare_and_swap(&tmpHead,tmpHead,j);
                     (*left_entry) = j;
                     left_next = j_next;
                 }
@@ -83,7 +82,6 @@ static entry *search(char *str, entry **left_entry, entry *Start)
                 break;
 
             if(!is_marked_ref(j_next)) {
-                __sync_val_compare_and_swap(&tmpHead,tmpHead,j);
                 (*left_entry) = j;
                 left_next = j_next;
             }
@@ -115,17 +113,15 @@ static entry *findName(char lastname[], entry *pHead)
 
 static thread_arg *createThread_arg(char *data_begin, char *data_end,
                                     int threadID, int numOfThread,
-                                    entry *entryPool)
+                                    entry *entryPool,thread_arg *argPool)
 {
-    thread_arg *new_arg = (thread_arg *) malloc(sizeof(thread_arg));
-
-    new_arg->data_begin = data_begin;
-    new_arg->data_end = data_end;
-    new_arg->threadID = threadID;
-    new_arg->numOfThread = numOfThread;
-    new_arg->lEntryPool_begin = entryPool;
-    new_arg->lEntry_head = new_arg->lEntry_tail = entryPool;
-    return new_arg;
+    argPool->data_begin = data_begin;
+    argPool->data_end = data_end;
+    argPool->threadID = threadID;
+    argPool->numOfThread = numOfThread;
+    argPool->lEntryPool_begin = entryPool;
+    argPool->lEntry_head = argPool->lEntry_tail = entryPool;
+    return argPool;
 }
 
 static void append(void *arg)
@@ -133,9 +129,10 @@ static void append(void *arg)
     thread_arg *t_arg = (thread_arg *) arg;
 
     int count = 0, len;
-    entry *left, *right;
+    entry *left, *right,*tmpHead;
 
     entry *j = t_arg->lEntryPool_begin;
+    tmpHead = entryHead;
 
     for (char *i = t_arg->data_begin; i < t_arg->data_end;
             i += MAX_LAST_NAME_SIZE * t_arg->numOfThread,
@@ -144,17 +141,14 @@ static void append(void *arg)
         left = right = NULL;
         if(i[strlen(i)-1]=='\n') i[strlen(i)-1] = '\0';
         j->lastName = i;
-        j->pNext = NULL;
-        len = strlen(i);
 
         while(1) {
-            right = search(i, &left, tmpHead);
-            if(strncasecmp(right->lastName,i,len) == 0 && strlen(right->lastName) == len)
-                break;
+            right = tmpHead->pNext;
             j->pNext = right;
-            if(__sync_val_compare_and_swap(&(left->pNext), right, j) == right)
+            if(__sync_val_compare_and_swap(&(tmpHead->pNext), right, j) == right)
                 break;
         }
+        tmpHead = j;
 
         DEBUG_LOG("thread %d t_argend string = %s\n",
                   t_arg->threadID, new -> lastName);
@@ -206,7 +200,7 @@ static void show_entry(entry *pHead)
 static void phonebook_size()
 {
     long long cs = 0;
-    tmpHead = entryHead -> pNext;
+    entry *tmpHead = entryHead -> pNext;
     while(tmpHead != entrytail) {
         ++cs;
         if((long long)(tmpHead->pNext) %2) {
@@ -223,6 +217,8 @@ static void phonebook_create()
 
 static entry *phonebook_appendByFile(char *fileName)
 {
+//	text_align("./dictionary/words.txt","./dictionary/append.txt",MAX_LAST_NAME_SIZE);
+
     int fd = open(fileName, O_RDONLY | O_NONBLOCK);
     file_size = fsize(fileName);
 
@@ -232,6 +228,7 @@ static entry *phonebook_appendByFile(char *fileName)
 
     data_number = file_size / MAX_LAST_NAME_SIZE;
     entry_pool = (entry *) malloc(sizeof(entry) * data_number);
+    thread_args_pool = (thread_arg *) malloc(sizeof(thread_arg) * THREAD_NUM);
     assert(entry_pool && "entry_pool error");
 
     entryHead = malloc(sizeof(entry));
@@ -240,17 +237,16 @@ static entry *phonebook_appendByFile(char *fileName)
     entryHead -> pNext = entrytail;
     entrytail -> lastName = "TOTALYNOTIMPOSSIBLENAME_TAIL";
     entrytail -> pNext = NULL;
-    tmpHead = entryHead;
 
     /* Prepare for mutli-threading */
     pthread_setconcurrency(THREAD_NUM + 1);
     for (int i = 0; i < THREAD_NUM; i++)
-        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i,map + file_size, i,THREAD_NUM, entry_pool + i);
+        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i,map + file_size, i,THREAD_NUM, entry_pool + i, thread_args_pool + i);
 
     /* Deliver the jobs to all thread and wait for completing  */
 
     for (int i = 0; i < THREAD_NUM; i++)
-        pthread_create(&threads[i], NULL, (void *)&append_on_head, (void *)thread_args[i]);
+        pthread_create(&threads[i], NULL, (void *)&append, (void *)thread_args[i]);
 
     for (int i = 0; i < THREAD_NUM; i++)
         pthread_join(threads[i], NULL);
@@ -275,8 +271,7 @@ static void phonebook_free()
     }
 
     free(entry_pool);
-    for (int i = 0; i < THREAD_NUM; i++)
-        free(thread_args[i]);
+    free(thread_args_pool);
 
     munmap(map, file_size);
 }
@@ -316,6 +311,8 @@ static void phonebook_remove(void *arg)
 
 static int phonebook_removeByFile(char *fileName)
 {
+//	text_align("./dictionary/words_random.txt","./dictionary/remove.txt",MAX_LAST_NAME_SIZE);
+
     int fd = open(fileName, O_RDONLY | O_NONBLOCK);
     file_size = fsize(fileName);
 
@@ -327,7 +324,7 @@ static int phonebook_removeByFile(char *fileName)
 
     pthread_setconcurrency(THREAD_NUM + 10);
     for(int i = 0; i < THREAD_NUM ; ++i)
-        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + REMOVE_NUM * MAX_LAST_NAME_SIZE, i, THREAD_NUM, NULL);
+        thread_args[i] = createThread_arg(map + MAX_LAST_NAME_SIZE * i, map + REMOVE_NUM * MAX_LAST_NAME_SIZE, i, THREAD_NUM, NULL, thread_args_pool + i);
 
     for(int i = 0; i< THREAD_NUM; ++i)
         pthread_create(&threads[i], NULL, (void *)&phonebook_remove, (void *)thread_args[i]);
